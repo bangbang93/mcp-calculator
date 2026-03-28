@@ -11,8 +11,13 @@ import { Worker } from 'node:worker_threads';
 const TIMEOUT_MS = 5_000;
 const MAX_MATRIX_SIZE = 100;
 
+// Detect ts-node so the correct worker file/extension is used in dev mode.
+// process[Symbol.for('ts-node.register.instance')] is set by ts-node when active.
+const isTsNode = !!(process as unknown as Record<symbol, unknown>)[
+  Symbol.for('ts-node.register.instance')
+];
 // Resolved at startup so the worker path survives packaging/renaming.
-const WORKER_PATH = path.resolve(__dirname, 'worker.js');
+const WORKER_PATH = path.resolve(__dirname, isTsNode ? 'worker.ts' : 'worker.js');
 
 interface WorkerResult {
   ok: true;
@@ -32,6 +37,7 @@ function evaluate(expression: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const worker = new Worker(WORKER_PATH, {
       workerData: { expression, maxMatrixSize: MAX_MATRIX_SIZE },
+      execArgv: isTsNode ? ['-r', 'ts-node/register'] : [],
     });
 
     const timer = setTimeout(() => {
@@ -115,12 +121,24 @@ async function startHttp(port: number): Promise<void> {
       sessionIdGenerator: undefined, // stateless
     });
 
-    await server.connect(transport);
-
     try {
+      await server.connect(transport);
       await transport.handleRequest(req, res);
+    } catch (err) {
+      console.error('[mcp-calculator] HTTP handler error:', err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Internal Server Error' }));
+      } else if (!res.writableEnded && !res.destroyed) {
+        res.end();
+      }
     } finally {
-      await transport.close();
+      try {
+        await transport.close();
+      } catch (closeErr) {
+        console.error('[mcp-calculator] Error closing HTTP transport:', closeErr);
+      }
     }
   });
 
@@ -135,7 +153,28 @@ const useHttp =
   process.argv.includes('--http') || process.env['TRANSPORT'] === 'http';
 
 if (useHttp) {
-  const port = parseInt(process.env['PORT'] ?? '3000', 10);
+  const rawPort = process.env['PORT'];
+  const defaultPort = 3000;
+  let port = defaultPort;
+
+  if (rawPort !== undefined && rawPort.trim() !== '') {
+    const parsed = Number(rawPort);
+    const isValidPort =
+      Number.isFinite(parsed) &&
+      Number.isInteger(parsed) &&
+      parsed >= 1 &&
+      parsed <= 65535;
+
+    if (!isValidPort) {
+      console.error(
+        `[mcp-calculator] Invalid PORT environment variable: "${rawPort}". Expected an integer between 1 and 65535.`,
+      );
+      process.exit(1);
+    }
+
+    port = parsed;
+  }
+
   startHttp(port).catch((err: unknown) => {
     console.error('[mcp-calculator] Fatal error:', err);
     process.exit(1);

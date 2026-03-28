@@ -33,7 +33,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.HUB_USERNAME }}/mcp-calculator
+          images: bangbang93/mcp-calculator
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
