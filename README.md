@@ -8,8 +8,8 @@ Supports **stdio** (Claude Desktop) and **HTTP Streamable** transports.
 ## Installation
 
 ```bash
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ---
@@ -202,8 +202,8 @@ Or HTTP mode (start the server first with `node dist/index.js --http`):
 
 ```bash
 # Run TypeScript directly (no build step)
-npm run dev
+pnpm run dev
 
 # HTTP mode during development
-npm run dev:http
+pnpm run dev:http
 ```
